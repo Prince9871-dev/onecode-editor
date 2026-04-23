@@ -21,6 +21,15 @@ interface CodeContext {
   incompletePatterns: string[]
 }
 
+interface ProviderMessage {
+  role: "system" | "user" | "assistant"
+  content: string
+}
+
+function getAIProvider() {
+  return process.env.AI_PROVIDER === "ollama" ? "ollama" : "groq"
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: CodeSuggestionRequest = await request.json()
@@ -50,9 +59,10 @@ export async function POST(request: NextRequest) {
         generatedAt: new Date().toISOString(),
       },
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Context analysis error:", error)
-    return NextResponse.json({ error: "Internal server error", message: error.message }, { status: 500 })
+    const message = error instanceof Error ? error.message : "Unknown error"
+    return NextResponse.json({ error: "Internal server error", message }, { status: 500 })
   }
 }
 
@@ -129,27 +139,68 @@ Generate suggestion:`
  */
 async function generateSuggestion(prompt: string): Promise<string> {
   try {
-    // Replace this with your actual AI service call
-    const response = await fetch("http://localhost:11434/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "codellama:latest",
-        prompt,
-        stream: false,
-        options: {
+    const provider = getAIProvider()
+    let suggestion = ""
+    if (provider === "ollama") {
+      const ollamaUrl = (process.env.OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/+$/, "")
+      const ollamaModel = process.env.OLLAMA_MODEL || "codellama"
+      const response = await fetch(`${ollamaUrl}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: ollamaModel,
+          prompt,
+          stream: false,
+          options: {
+            temperature: 0.7,
+            max_tokens: 300,
+          },
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Ollama service error: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      suggestion = data.response
+    } else {
+      const groqApiKey = process.env.GROQ_API_KEY
+      const model = process.env.MODEL_NAME || "llama3-70b-8192"
+      if (!groqApiKey) {
+        throw new Error("GROQ_API_KEY is not configured")
+      }
+
+      const messages: ProviderMessage[] = [
+        {
+          role: "system",
+          content:
+            "You are an expert code completion assistant. Return only the exact code snippet to insert at cursor position.",
+        },
+        { role: "user", content: prompt },
+      ]
+
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${groqApiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages,
           temperature: 0.7,
           max_tokens: 300,
-        },
-      }),
-    })
+        }),
+      })
 
-    if (!response.ok) {
-      throw new Error(`AI service error: ${response.statusText}`)
+      if (!response.ok) {
+        throw new Error(`Groq service error: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      suggestion = data?.choices?.[0]?.message?.content || ""
     }
-
-    const data = await response.json()
-    let suggestion = data.response
 
     // Clean up the suggestion
     if (suggestion.includes("```")) {
@@ -163,7 +214,7 @@ async function generateSuggestion(prompt: string): Promise<string> {
     return suggestion
   } catch (error) {
     console.error("AI generation error:", error)
-    return "// AI suggestion unavailable"
+    return "// AI suggestion unavailable. Please verify AI provider configuration."
   }
 }
 
@@ -236,12 +287,4 @@ function detectIncompletePatterns(line: string, column: number): string[] {
   if (/\.\s*$/.test(beforeCursor)) patterns.push("method-call")
 
   return patterns
-}
-
-function getLastNonEmptyLine(lines: string[], currentLine: number): string {
-  for (let i = currentLine - 1; i >= 0; i--) {
-    const line = lines[i]
-    if (line.trim() !== "") return line
-  }
-  return ""
 }

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { templatePaths } from "@/lib/template";
 import path from "path";
 import fs from "fs/promises";
+import { existsSync } from "fs";
 import { NextRequest } from "next/server";
 
 // Helper function to ensure valid JSON
@@ -14,6 +15,16 @@ function validateJsonStructure(data: unknown): boolean {
     console.error("Invalid JSON structure:", error);
     return false;
   }
+}
+
+function resolveTemplatePath(relativeTemplatePath: string): string | null {
+  const normalizedPath = relativeTemplatePath.replace(/^[/\\]+/, "");
+  const candidates = [
+    path.join(process.cwd(), normalizedPath),
+    path.join(process.cwd(), "..", normalizedPath),
+  ];
+
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
 export async function GET(
@@ -43,7 +54,10 @@ export async function GET(
   }
 
   try {
-    const inputPath = path.join(process.cwd(), templatePath);
+    const inputPath = resolveTemplatePath(templatePath);
+    if (!inputPath) {
+      return Response.json({ error: `Template directory '${templatePath}' does not exist` }, { status: 404 });
+    }
     const outputFile = path.join(process.cwd(), `output/${templateKey}.json`);
 
     console.log("Input Path:", inputPath);

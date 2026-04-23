@@ -1,10 +1,6 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
-import { Terminal } from "xterm";
-import { FitAddon } from "xterm-addon-fit";
-import { WebLinksAddon } from "xterm-addon-web-links";
-import { SearchAddon } from "xterm-addon-search";
 import "xterm/css/xterm.css";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,9 +28,9 @@ const TerminalComponent = forwardRef<TerminalRef, TerminalProps>(({
   webContainerInstance
 }, ref) => {
   const terminalRef = useRef<HTMLDivElement>(null);
-  const term = useRef<Terminal | null>(null);
-  const fitAddon = useRef<FitAddon | null>(null);
-  const searchAddon = useRef<SearchAddon | null>(null);
+  const term = useRef<any>(null);
+  const fitAddon = useRef<any>(null);
+  const searchAddon = useRef<any>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [showSearch, setShowSearch] = useState(false);
@@ -272,50 +268,62 @@ const TerminalComponent = forwardRef<TerminalRef, TerminalProps>(({
   }, [executeCommand, writePrompt]);
 
   const initializeTerminal = useCallback(() => {
-    if (!terminalRef.current || term.current) return;
+    if (typeof window === "undefined" || !terminalRef.current || term.current) return;
 
-    const terminal = new Terminal({
-      cursorBlink: true,
-      fontFamily: '"Fira Code", "JetBrains Mono", "Consolas", monospace',
-      fontSize: 14,
-      lineHeight: 1.2,
-      letterSpacing: 0,
-      theme: terminalThemes[theme],
-      allowTransparency: false,
-      convertEol: true,
-      scrollback: 1000,
-      tabStopWidth: 4,
-    });
+    const setupTerminal = async () => {
+      const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { SearchAddon }] = await Promise.all([
+        import("xterm"),
+        import("xterm-addon-fit"),
+        import("xterm-addon-web-links"),
+        import("xterm-addon-search"),
+      ]);
 
-    // Add addons
-    const fitAddonInstance = new FitAddon();
-    const webLinksAddon = new WebLinksAddon();
-    const searchAddonInstance = new SearchAddon();
+      // Guard against race conditions during unmount/re-render.
+      if (!terminalRef.current || term.current) return;
 
-    terminal.loadAddon(fitAddonInstance);
-    terminal.loadAddon(webLinksAddon);
-    terminal.loadAddon(searchAddonInstance);
+      const terminal = new Terminal({
+        cursorBlink: true,
+        fontFamily: '"Fira Code", "JetBrains Mono", "Consolas", monospace',
+        fontSize: 14,
+        lineHeight: 1.2,
+        letterSpacing: 0,
+        theme: terminalThemes[theme],
+        allowTransparency: false,
+        convertEol: true,
+        scrollback: 1000,
+        tabStopWidth: 4,
+      });
 
-    terminal.open(terminalRef.current);
-    
-    fitAddon.current = fitAddonInstance;
-    searchAddon.current = searchAddonInstance;
-    term.current = terminal;
+      // Add addons
+      const fitAddonInstance = new FitAddon();
+      const webLinksAddon = new WebLinksAddon();
+      const searchAddonInstance = new SearchAddon();
 
-    // Handle terminal input
-    terminal.onData(handleTerminalInput);
+      terminal.loadAddon(fitAddonInstance);
+      terminal.loadAddon(webLinksAddon);
+      terminal.loadAddon(searchAddonInstance);
 
-    // Initial fit
-    setTimeout(() => {
-      fitAddonInstance.fit();
-    }, 100);
+      terminal.open(terminalRef.current);
 
-    // Welcome message
-    terminal.writeln("🚀 WebContainer Terminal");
-    terminal.writeln("Type 'help' for available commands");
-    writePrompt();
+      fitAddon.current = fitAddonInstance;
+      searchAddon.current = searchAddonInstance;
+      term.current = terminal;
 
-    return terminal;
+      // Handle terminal input
+      terminal.onData(handleTerminalInput);
+
+      // Initial fit
+      setTimeout(() => {
+        fitAddonInstance.fit();
+      }, 100);
+
+      // Welcome message
+      terminal.writeln("🚀 WebContainer Terminal");
+      terminal.writeln("Type 'help' for available commands");
+      writePrompt();
+    };
+
+    void setupTerminal();
   }, [theme, handleTerminalInput, writePrompt]);
 
   const connectToWebContainer = useCallback(async () => {

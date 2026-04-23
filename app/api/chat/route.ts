@@ -5,6 +5,11 @@ interface ChatMessage {
   content: string
 }
 
+interface ProviderMessage {
+  role: "system" | "user" | "assistant"
+  content: string
+}
+
 interface EnhancePromptRequest {
   prompt: string
   context?: {
@@ -12,6 +17,85 @@ interface EnhancePromptRequest {
     language?: string
     codeContent?: string
   }
+}
+
+function getAIProvider() {
+  return process.env.AI_PROVIDER === "ollama" ? "ollama" : "groq"
+}
+
+async function generateWithOllama(prompt: string) {
+  const ollamaUrl = (process.env.OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/+$/, "")
+  const ollamaModel = process.env.OLLAMA_MODEL || "codellama"
+
+  const response = await fetch(`${ollamaUrl}/api/generate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: ollamaModel,
+      prompt,
+      stream: false,
+      options: {
+        temperature: 0.7,
+        top_p: 0.9,
+        max_tokens: 1000,
+        num_predict: 1000,
+        repeat_penalty: 1.1,
+        context_length: 4096,
+      },
+    }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error("Error from Ollama API:", errorText)
+    throw new Error(`Ollama API error: ${response.status} - ${errorText}`)
+  }
+
+  const data = await response.json()
+  if (!data.response) {
+    throw new Error("No response from Ollama")
+  }
+
+  return data.response.trim() as string
+}
+
+async function generateWithGroq(messages: ProviderMessage[]) {
+  const groqApiKey = process.env.GROQ_API_KEY
+  const model = process.env.MODEL_NAME || "llama3-70b-8192"
+
+  if (!groqApiKey) {
+    throw new Error("GROQ_API_KEY is not configured")
+  }
+
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${groqApiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: 0.7,
+      max_tokens: 1000,
+    }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error("Error from Groq API:", errorText)
+    throw new Error(`Groq API error: ${response.status} - ${errorText}`)
+  }
+
+  const data = await response.json()
+  const content = data?.choices?.[0]?.message?.content
+  if (!content || typeof content !== "string") {
+    throw new Error("No response from Groq")
+  }
+
+  return content.trim()
 }
 
 async function generateAIResponse(messages: ChatMessage[]) {
@@ -25,7 +109,7 @@ async function generateAIResponse(messages: ChatMessage[]) {
 Always provide clear, practical answers. When showing code, use proper formatting with language-specific syntax.
 Keep responses concise but comprehensive. Use code blocks with language specification when providing code examples.`
 
-  const fullMessages = [{ role: "system", content: systemPrompt }, ...messages]
+  const fullMessages: ProviderMessage[] = [{ role: "system", content: systemPrompt }, ...messages]
 
   const prompt = fullMessages.map((msg) => `${msg.role}: ${msg.content}`).join("\n\n")
 
@@ -33,40 +117,13 @@ Keep responses concise but comprehensive. Use code blocks with language specific
   const timeoutId = setTimeout(() => controller.abort(), 15000)
 
   try {
-    const response = await fetch("http://localhost:11434/api/generate", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "codellama:latest",
-        prompt,
-        stream: false,
-        options: {
-          temperature: 0.7,
-          top_p: 0.9,
-          max_tokens: 1000,
-          num_predict: 1000,
-          repeat_penalty: 1.1,
-          context_length: 4096,
-        },
-      }),
-      signal: controller.signal,
-    })
-
+    const provider = getAIProvider()
+    const aiResponse =
+      provider === "ollama"
+        ? await generateWithOllama(prompt)
+        : await generateWithGroq(fullMessages)
     clearTimeout(timeoutId)
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error("Error from AI model API:", errorText)
-      throw new Error(`AI model API error: ${response.status} - ${errorText}`)
-    }
-
-    const data = await response.json()
-    if (!data.response) {
-      throw new Error("No response from AI model")
-    }
-    return data.response.trim()
+    return aiResponse
   } catch (error) {
     clearTimeout(timeoutId)
     if ((error as Error).name === "AbortError") {
@@ -94,28 +151,42 @@ Enhanced prompt should:
 Return only the enhanced prompt, nothing else.`
 
   try {
-    const response = await fetch("http://localhost:11434/api/generate", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "codellama:latest",
-        prompt: enhancementPrompt,
-        stream: false,
-        options: {
-          temperature: 0.3,
-          max_tokens: 500,
+    const provider = getAIProvider()
+    if (provider === "ollama") {
+      const ollamaUrl = (process.env.OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/+$/, "")
+      const ollamaModel = process.env.OLLAMA_MODEL || "codellama"
+      const response = await fetch(`${ollamaUrl}/api/generate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      }),
-    })
+        body: JSON.stringify({
+          model: ollamaModel,
+          prompt: enhancementPrompt,
+          stream: false,
+          options: {
+            temperature: 0.3,
+            max_tokens: 500,
+          },
+        }),
+      })
 
-    if (!response.ok) {
-      throw new Error("Failed to enhance prompt")
+      if (!response.ok) {
+        throw new Error("Failed to enhance prompt")
+      }
+
+      const data = await response.json()
+      return data.response?.trim() || request.prompt
     }
 
-    const data = await response.json()
-    return data.response?.trim() || request.prompt
+    const groqResponse = await generateWithGroq([
+      {
+        role: "system",
+        content: "You rewrite developer prompts to be clearer, more specific, and more actionable. Return only the rewritten prompt.",
+      },
+      { role: "user", content: enhancementPrompt },
+    ])
+    return groqResponse || request.prompt
   } catch (error) {
     console.error("Prompt enhancement error:", error)
     return request.prompt // Return original if enhancement fails
@@ -141,12 +212,12 @@ export async function POST(req: NextRequest) {
 
     const validHistory = Array.isArray(history)
       ? history.filter(
-          (msg: any) =>
+          (msg: unknown) =>
             msg &&
             typeof msg === "object" &&
-            typeof msg.role === "string" &&
-            typeof msg.content === "string" &&
-            ["user", "assistant"].includes(msg.role),
+            typeof (msg as { role?: unknown }).role === "string" &&
+            typeof (msg as { content?: unknown }).content === "string" &&
+            ["user", "assistant"].includes((msg as { role: string }).role),
         )
       : []
 

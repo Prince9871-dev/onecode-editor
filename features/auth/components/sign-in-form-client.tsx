@@ -26,10 +26,10 @@ const SignInFormClient = () => {
     <Card className="w-full max-w-md">
       <CardHeader className="space-y-1">
         <CardTitle className="text-2xl font-bold text-center">
-          Sign In
+          Welcome to OneCode
         </CardTitle>
         <CardDescription className="text-center">
-          Choose your preferred sign-in method
+          Sign in to continue to OneCode Editor
         </CardDescription>
       </CardHeader>
 
