@@ -2,6 +2,7 @@ import AddNewButton from "@/features/dashboard/components/add-new-btn";
 import AddRepo from "@/features/dashboard/components/add-repo";
 
 import ProjectTable from "@/features/dashboard/components/project-table";
+import type { Project } from "@/features/dashboard/types";
 import {
   getAllPlaygroundForUser,
   deleteProjectById,
@@ -28,12 +29,15 @@ const EmptyState = () => (
 const DashboardMainPage = async () => {
   const playgrounds = await getAllPlaygroundForUser();
 
-  const safePlaygrounds = (playgrounds || []).map((project) => ({
+  const safePlaygrounds: Project[] = (playgrounds || []).map((project) => ({
     ...project,
-    description: project.description || "",
+    description: project.description ?? "",
+    user: {
+      ...project.user,
+      name: project.user?.name ?? "Unknown User",
+      image: project.user?.image ?? "/placeholder.svg",
+    },
   }));
-
-  console.log(safePlaygrounds);
 
   return (
     <div className="flex flex-col justify-start items-center min-h-screen mx-auto max-w-7xl px-4 py-10">
@@ -50,7 +54,9 @@ const DashboardMainPage = async () => {
             projects={safePlaygrounds}
             onDeleteProject={deleteProjectById}
             onUpdateProject={editProjectById}
-            onDuplicateProject={duplicateProjectById}
+            onDuplicateProject={async (id: string) => {
+              await duplicateProjectById(id);
+            }}
           />
         )}
       </div>
