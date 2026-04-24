@@ -1,4 +1,5 @@
-import NextAuth from "next-auth";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
 import {
   DEFAULT_LOGIN_REDIRECT,
@@ -6,23 +7,15 @@ import {
   publicRoutes,
   authRoutes,
 } from "@/routes";
-import authConfig from "./auth.config";
 
-const { auth } = NextAuth({
-  ...authConfig,
-  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
-});
-
-// @ts-ignore
-export default auth((req) => {
+export function middleware(req: NextRequest) {
   const { nextUrl } = req;
-  const isLoggedIn = !!req.auth;
 
-  const host = req.headers.get("host");
-
-  const requestOrigin = host
-    ? `${nextUrl.protocol}//${host}`
-    : nextUrl.origin;
+  const isLoggedIn =
+    !!req.cookies.get("authjs.session-token") ||
+    !!req.cookies.get("__Secure-authjs.session-token") ||
+    !!req.cookies.get("next-auth.session-token") ||
+    !!req.cookies.get("__Secure-next-auth.session-token");
 
   const isApiAuthRoute =
     nextUrl.pathname.startsWith(apiAuthPrefix);
@@ -33,31 +26,28 @@ export default auth((req) => {
   const isAuthRoute =
     authRoutes.includes(nextUrl.pathname);
 
-  // Allow NextAuth API routes
   if (isApiAuthRoute) {
-    return null;
+    return NextResponse.next();
   }
 
-  // If user visits auth pages like sign-in/sign-up
   if (isAuthRoute) {
     if (isLoggedIn) {
-      return Response.redirect(
-        new URL(DEFAULT_LOGIN_REDIRECT, requestOrigin)
+      return NextResponse.redirect(
+        new URL(DEFAULT_LOGIN_REDIRECT, nextUrl)
       );
     }
 
-    return null;
+    return NextResponse.next();
   }
 
-  // Protect private routes
   if (!isLoggedIn && !isPublicRoute) {
-    return Response.redirect(
-      new URL("/auth/sign-in", requestOrigin)
+    return NextResponse.redirect(
+      new URL("/auth/sign-in", nextUrl)
     );
   }
 
-  return null;
-});
+  return NextResponse.next();
+}
 
 export const config = {
   matcher: [
