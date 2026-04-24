@@ -1,8 +1,8 @@
 import AddNewButton from "@/features/dashboard/components/add-new-btn";
 import AddRepo from "@/features/dashboard/components/add-repo";
-
 import ProjectTable from "@/features/dashboard/components/project-table";
 import type { Project } from "@/features/dashboard/types";
+
 import {
   getAllPlaygroundForUser,
   deleteProjectById,
@@ -29,15 +29,20 @@ const EmptyState = () => (
 const DashboardMainPage = async () => {
   const playgrounds = await getAllPlaygroundForUser();
 
-  const safePlaygrounds: Project[] = (playgrounds || []).map((project) => ({
-    ...project,
-    description: project.description ?? "",
-    user: {
-      ...project.user,
-      name: project.user?.name ?? "Unknown User",
-      image: project.user?.image ?? "/placeholder.svg",
-    },
-  }));
+  const safePlaygrounds: Project[] = (playgrounds || []).map(
+    (project: any) => ({
+      ...project,
+      description: project.description ?? "",
+      template: project.template ?? "",
+      userId: project.userId ?? "",
+      Starmark: project.Starmark ?? [],
+      user: {
+        ...project.user,
+        name: project.user?.name ?? "",
+        image: project.user?.image ?? "",
+      },
+    })
+  );
 
   return (
     <div className="flex flex-col justify-start items-center min-h-screen mx-auto max-w-7xl px-4 py-10">
