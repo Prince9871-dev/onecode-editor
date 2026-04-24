@@ -1,38 +1,52 @@
-import { SidebarProvider } from "@/components/ui/sidebar";
-import { DashboardSidebar } from "@/features/dashboard/dashboard-sidebar";
-import { getAllPlaygroundForUser } from "@/features/playground/actions";
-import type React from "react";
+import NextAuth from "next-auth";
+import authConfig from "./auth.config";
 
-type DashboardPlaygroundItem = {
-  id: string;
-  name: string;
-  icon: string;
-  starred: boolean;
+import {
+  DEFAULT_LOGIN_REDIRECT,
+  apiAuthPrefix,
+  publicRoutes,
+  authRoutes,
+} from "@/routes";
+
+const { auth } = NextAuth(authConfig);
+
+export default auth((req) => {
+  const { nextUrl } = req;
+  const isLoggedIn = !!req.auth;
+
+  const isApiAuthRoute = nextUrl.pathname.startsWith(apiAuthPrefix);
+  const isPublicRoute = publicRoutes.includes(nextUrl.pathname);
+  const isAuthRoute = authRoutes.includes(nextUrl.pathname);
+
+  // Allow NextAuth API routes
+  if (isApiAuthRoute) {
+    return null;
+  }
+
+  // If already logged in and trying auth pages
+  if (isAuthRoute) {
+    if (isLoggedIn) {
+      return Response.redirect(
+        new URL(DEFAULT_LOGIN_REDIRECT, nextUrl.origin)
+      );
+    }
+    return null;
+  }
+
+  // Protect private routes
+  if (!isLoggedIn && !isPublicRoute) {
+    return Response.redirect(
+      new URL("/auth/sign-in", nextUrl.origin)
+    );
+  }
+
+  return null;
+});
+
+export const config = {
+  matcher: [
+    "/((?!.+\\.[\\w]+$|_next).*)",
+    "/",
+    "/(api|trpc)(.*)",
+  ],
 };
-
-export default async function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const playgroundData = await getAllPlaygroundForUser();
-
-  const formattedPlaygroundData: DashboardPlaygroundItem[] =
-    (playgroundData || []).map((item) => ({
-      id: item.id,
-      name: item.title,
-      icon: "Code2",
-      starred: item.Starmark?.[0]?.isMarked || false,
-    }));
-
-  return (
-    <SidebarProvider>
-      <div className="flex min-h-screen w-full overflow-x-hidden">
-        <DashboardSidebar
-          initialPlaygroundData={formattedPlaygroundData}
-        />
-        <main className="flex-1">{children}</main>
-      </div>
-    </SidebarProvider>
-  );
-}
