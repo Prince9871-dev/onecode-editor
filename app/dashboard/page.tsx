@@ -30,7 +30,7 @@ const DashboardMainPage = async () => {
   const playgrounds = await getAllPlaygroundForUser();
 
   const safePlaygrounds: Project[] = (playgrounds || []).map(
-    (project: any) => ({
+    (project) => ({
       ...project,
       description: project.description ?? "",
       template: project.template ?? "",

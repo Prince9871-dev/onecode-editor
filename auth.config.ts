@@ -2,16 +2,31 @@ import GitHub from "next-auth/providers/github";
 import Google from "next-auth/providers/google";
 import type { NextAuthConfig } from "next-auth";
 
-export default {
-  providers: [
-    GitHub({
-      clientId: process.env.AUTH_GITHUB_ID!,
-      clientSecret: process.env.AUTH_GITHUB_SECRET!,
-    }),
+const githubId = process.env.AUTH_GITHUB_ID;
+const githubSecret = process.env.AUTH_GITHUB_SECRET;
+const googleId = process.env.AUTH_GOOGLE_ID;
+const googleSecret = process.env.AUTH_GOOGLE_SECRET;
 
+const providers = [];
+
+if (githubId && githubSecret) {
+  providers.push(
+    GitHub({
+      clientId: githubId,
+      clientSecret: githubSecret,
+    })
+  );
+}
+
+if (googleId && googleSecret) {
+  providers.push(
     Google({
-      clientId: process.env.AUTH_GOOGLE_ID!,
-      clientSecret: process.env.AUTH_GOOGLE_SECRET!,
-    }),
-  ],
+      clientId: googleId,
+      clientSecret: googleSecret,
+    })
+  );
+}
+
+export default {
+  providers,
 } satisfies NextAuthConfig;
